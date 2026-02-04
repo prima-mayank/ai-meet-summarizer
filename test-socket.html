@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Socket Test</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+</head>
+<body>
+    <h2>Check your Backend Terminal</h2>
+    <button onclick="sendCaption()">Send Fake Caption</button>
+
+    <script>
+        const socket = io('http://localhost:3001');
+
+        socket.on('connect', () => {
+            console.log('Connected to backend!');
+        });
+
+        function sendCaption() {
+            // This simulates the Chrome Extension sending text
+            socket.emit('stream-caption', { 
+                meetingId: 'test-123', 
+                text: 'Hello, is this working?' 
+            });
+        }
+    </script>
+</body>
+</html>

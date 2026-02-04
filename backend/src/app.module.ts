@@ -3,7 +3,8 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-
+import { MeetingsModule } from './meetings/meetings.module';
+import { MeetingGateway } from './websocket/meeting.gateway';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -17,8 +18,10 @@ import { AppService } from './app.service';
       }),
       inject: [ConfigService],
     }),
+
+    MeetingsModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [AppService,MeetingGateway],
 })
 export class AppModule {}
