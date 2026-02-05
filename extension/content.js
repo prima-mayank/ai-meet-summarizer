@@ -1,8 +1,80 @@
 console.log("AI Summarizer Loaded");
 
+const PANEL_STATE_KEY = "ai-summarizer-panel-state";
+
+function readPanelState() {
+    try {
+        return localStorage.getItem(PANEL_STATE_KEY);
+    } catch {
+        return null;
+    }
+}
+
+function writePanelState(value) {
+    try {
+        localStorage.setItem(PANEL_STATE_KEY, value);
+    } catch {
+        // Ignore storage failures (private mode, blocked storage, etc.)
+    }
+}
+
+function createToggleButton() {
+    const existing = document.getElementById("ai-summarizer-toggle");
+    if (existing) return existing;
+
+    const toggle = document.createElement("button");
+    toggle.id = "ai-summarizer-toggle";
+    toggle.type = "button";
+    toggle.style.position = "fixed";
+    toggle.style.right = "0";
+    toggle.style.top = "45%";
+    toggle.style.transform = "translateY(-50%)";
+    toggle.style.zIndex = "999999";
+    toggle.style.border = "1px solid #374151";
+    toggle.style.borderRight = "none";
+    toggle.style.background = "#111827";
+    toggle.style.color = "#e5e7eb";
+    toggle.style.borderRadius = "8px 0 0 8px";
+    toggle.style.padding = "6px 10px";
+    toggle.style.cursor = "pointer";
+    toggle.style.font = "12px/1.2 Arial, sans-serif";
+    toggle.style.boxShadow = "0 2px 8px rgba(0,0,0,0.2)";
+
+    document.documentElement.appendChild(toggle);
+    return toggle;
+}
+
+function setPanelVisible(panel, toggle, visible) {
+    panel.style.display = visible ? "flex" : "none";
+    toggle.textContent = visible ? "Hide Summarizer" : "Show Summarizer";
+    toggle.setAttribute("aria-pressed", visible ? "true" : "false");
+    writePanelState(visible ? "open" : "closed");
+}
+
 function createStatusPanel() {
     const existing = document.getElementById("ai-summarizer-status");
-    if (existing) return existing;
+    if (existing) {
+        const label = existing.querySelector("#ai-summarizer-label");
+        const summarizeBtn = existing.querySelector("#ai-summarizer-summarize");
+        const clearBtn = existing.querySelector("#ai-summarizer-clear");
+        const exportSelect = existing.querySelector("#ai-summarizer-export-select");
+        const exportBtn = existing.querySelector("#ai-summarizer-export-btn");
+        const summaryBox = existing.querySelector("#ai-summarizer-summary");
+
+        if (label && summarizeBtn && clearBtn && exportSelect && exportBtn && summaryBox) {
+            return {
+                panel: existing,
+                label,
+                summarizeBtn,
+                clearBtn,
+                exportSelect,
+                exportBtn,
+                summaryBox,
+            };
+        }
+
+        existing.remove();
+    }
 
     const panel = document.createElement("div");
     panel.id = "ai-summarizer-status";
@@ -27,11 +99,14 @@ function createStatusPanel() {
     label.textContent = "Summarizer: starting...";
 
     const summarizeBtn = document.createElement("button");
+    summarizeBtn.id = "ai-summarizer-summarize";
     summarizeBtn.textContent = "Summarize";
     const clearBtn = document.createElement("button");
+    clearBtn.id = "ai-summarizer-clear";
     clearBtn.textContent = "Clear";
 
     const exportSelect = document.createElement("select");
+    exportSelect.id = "ai-summarizer-export-select";
     const exportOptions = [
         { value: "txt", label: "TXT" },
         { value: "md", label: "MD" },
@@ -51,7 +126,22 @@ function createStatusPanel() {
     exportSelect.style.padding = "4px 8px";
 
     const exportBtn = document.createElement("button");
+    exportBtn.id = "ai-summarizer-export-btn";
     exportBtn.textContent = "Export";
+
+    const summaryBox = document.createElement("pre");
+    summaryBox.id = "ai-summarizer-summary";
+    summaryBox.style.margin = "6px 0 0 0";
+    summaryBox.style.padding = "8px";
+    summaryBox.style.border = "1px solid #374151";
+    summaryBox.style.background = "#0b1220";
+    summaryBox.style.color = "#e5e7eb";
+    summaryBox.style.borderRadius = "8px";
+    summaryBox.style.whiteSpace = "pre-wrap";
+    summaryBox.style.maxHeight = "220px";
+    summaryBox.style.overflow = "auto";
+    summaryBox.style.width = "100%";
+    summaryBox.style.display = "none";
 
     const buttons = [summarizeBtn, clearBtn, exportBtn];
     for (const btn of buttons) {
@@ -68,6 +158,7 @@ function createStatusPanel() {
     panel.appendChild(clearBtn);
     panel.appendChild(exportSelect);
     panel.appendChild(exportBtn);
+    panel.appendChild(summaryBox);
     document.documentElement.appendChild(panel);
 
     return {
@@ -77,10 +168,21 @@ function createStatusPanel() {
         clearBtn,
         exportSelect,
         exportBtn,
+        summaryBox,
     };
 }
 
+function main() {
 const ui = createStatusPanel();
+const toggleBtn = createToggleButton();
+const storedState = readPanelState();
+const initialVisible = storedState !== "closed";
+setPanelVisible(ui.panel, toggleBtn, initialVisible);
+
+toggleBtn.addEventListener("click", () => {
+    const isVisible = ui.panel.style.display !== "none";
+    setPanelVisible(ui.panel, toggleBtn, !isVisible);
+});
 
 const resolvedBackendUrl = typeof BACKEND_URL === "string" && BACKEND_URL.length > 0
     ? BACKEND_URL
@@ -96,6 +198,12 @@ const socket = io(resolvedBackendUrl, {
 socket.on("connect", () => {
     console.log("Connected to Backend Server");
     ui.label.textContent = "Summarizer: connected";
+    const meetingId = getSessionId();
+    socket.emit("get-session-stats", { meetingId }, (stats) => {
+        if (!stats) return;
+        const count = Number(stats?.count || 0);
+        if (count > 0) ui.label.textContent = `Captions: ${count}`;
+    });
 });
 
 socket.on("disconnect", () => {
@@ -109,10 +217,21 @@ socket.on("connect_error", (err) => {
 });
 
 socket.on("meeting-summary", (payload) => {
-    if (!payload?.summary) return;
-    console.log("Summary:", payload.summary);
-    ui.label.textContent = "Summary ready (see console)";
-    alert(payload.summary);
+    const summary = payload?.summary ? String(payload.summary) : "";
+    console.log("meeting-summary payload:", payload);
+    if (!summary.trim()) {
+        ui.label.textContent = "Summarizer: no summary returned";
+        return;
+    }
+    ui.summaryBox.textContent = summary;
+    ui.summaryBox.style.display = "block";
+    const count = Number(payload?.count || 0);
+    ui.label.textContent = count > 0 ? `Summary ready (captions: ${count})` : "Summary ready";
+});
+
+socket.on("caption-stored", (stats) => {
+    const count = Number(stats?.count || 0);
+    if (count > 0) ui.label.textContent = `Captions: ${count}`;
 });
 
 let lastText = "";
@@ -133,10 +252,10 @@ function getCaptionTextFromSelector(selector) {
     if (selector === ".ytp-caption-window-container") {
         const segments = nodes[nodes.length - 1].querySelectorAll(".ytp-caption-segment");
         const text = Array.from(segments).map((n) => n.innerText).join(" ").trim();
-        return text;
+        return text ? text.normalize("NFC") : "";
     }
-    const text = nodes[nodes.length - 1].innerText?.trim();
-    return text || "";
+    const text = nodes[nodes.length - 1].innerText?.replace(/\s+/g, " ").trim();
+    return text ? text.normalize("NFC") : "";
 }
 
 function getLatestCaptionText() {
@@ -201,8 +320,31 @@ function startListening() {
 }
 
 ui.summarizeBtn.addEventListener("click", () => {
+    const meetingId = getSessionId();
+    ui.summaryBox.style.display = "none";
+    ui.summaryBox.textContent = "";
     ui.label.textContent = "Summarizer: summarizing...";
-    socket.emit("request-summary", { meetingId: getSessionId() });
+    console.log("Requesting summary for meetingId:", meetingId);
+
+    const emitter = typeof socket.timeout === "function" ? socket.timeout(20000) : socket;
+    emitter.emit("request-summary", { meetingId }, (arg1, arg2) => {
+        const hasTimeoutAck = typeof socket.timeout === "function";
+        const err = hasTimeoutAck ? arg1 : null;
+        const response = hasTimeoutAck ? arg2 : arg1;
+
+        if (err) {
+            console.error("request-summary ack error:", err);
+            ui.label.textContent = "Summarizer: summary request timed out";
+            return;
+        }
+        if (!response) return;
+        const summary = response?.summary ? String(response.summary) : "";
+        if (!summary.trim()) return;
+        ui.summaryBox.textContent = summary;
+        ui.summaryBox.style.display = "block";
+        const count = Number(response?.count || 0);
+        ui.label.textContent = count > 0 ? `Summary ready (captions: ${count})` : "Summary ready";
+    });
 });
 
 ui.clearBtn.addEventListener("click", () => {
@@ -223,3 +365,11 @@ ui.exportBtn.addEventListener("click", () => {
 });
 
 setTimeout(startListening, 3001);
+}
+
+if (window.__AI_SUMMARIZER_STARTED__) {
+    console.log("AI Summarizer already running");
+} else {
+    window.__AI_SUMMARIZER_STARTED__ = true;
+    main();
+}
