@@ -5,6 +5,9 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { MeetingsModule } from './meetings/meetings.module';
 import { MeetingGateway } from './websocket/meeting.gateway';
+import { TranscriptsService } from './transcripts/transcripts.service';
+import { ExportController } from './export/export.controller';
+import { HealthController } from './health/health.controller';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
@@ -23,7 +26,7 @@ if (mongoUri) {
 }
 @Module({
   imports: appImports,
-  controllers: [AppController],
-  providers: [AppService,MeetingGateway],
+  controllers: [AppController, ExportController, HealthController],
+  providers: [AppService, MeetingGateway, TranscriptsService],
 })
 export class AppModule {}
