@@ -21,6 +21,15 @@ export class TranscriptsService {
     return this.transcripts.get(meetingId) ?? [];
   }
 
+  getStats(meetingId: string): { meetingId: string; count: number; lastCaption: string } {
+    const captions = this.getCaptions(meetingId);
+    return {
+      meetingId,
+      count: captions.length,
+      lastCaption: captions.length > 0 ? captions[captions.length - 1] : '',
+    };
+  }
+
   clear(meetingId: string) {
     this.transcripts.delete(meetingId);
   }
@@ -30,51 +39,140 @@ export class TranscriptsService {
     const text = this.buildTranscriptText(captions);
     const ollamaSummary = await this.tryOllamaSummary(text);
     if (ollamaSummary) return ollamaSummary;
-    return this.summarizeCaptions(captions);
+    return this.summarizeCaptionsMarkdown(captions);
   }
 
-  summarizeCaptions(captions: string[]): string {
+  private summarizeCaptionsMarkdown(captions: string[]): string {
     const text = captions.join(' ');
-    if (!text.trim()) return 'No captions captured yet.';
+    if (!text.trim()) return '## TL;DR\n- No captions captured yet.\n';
 
     const sentences = text
-      .split(/(?<=[.!?])\s+/)
+      .split(/(?<=[.!?\u0964])\s+|\n+/u)
       .map((s) => s.trim())
       .filter((s) => s.length > 0);
 
-    if (sentences.length <= 3) {
-      return sentences.join(' ');
-    }
+    const pickTopSentences = (max: number) => {
+      if (sentences.length <= max) return sentences.map((s, idx) => ({ idx, sentence: s }));
 
-    const stopwords = new Set([
-      'the','a','an','and','or','but','if','then','so','because','as','of','to','in','on','for','with','at','by','from',
-      'is','are','was','were','be','been','being','it','this','that','these','those','i','you','we','they','he','she','them',
-      'my','your','our','their','his','her','its','not','do','does','did','will','would','can','could','should','about',
-    ]);
+      const stopwords = new Set([
+        'the',
+        'a',
+        'an',
+        'and',
+        'or',
+        'but',
+        'if',
+        'then',
+        'so',
+        'because',
+        'as',
+        'of',
+        'to',
+        'in',
+        'on',
+        'for',
+        'with',
+        'at',
+        'by',
+        'from',
+        'is',
+        'are',
+        'was',
+        'were',
+        'be',
+        'been',
+        'being',
+        'it',
+        'this',
+        'that',
+        'these',
+        'those',
+        'i',
+        'you',
+        'we',
+        'they',
+        'he',
+        'she',
+        'them',
+        'my',
+        'your',
+        'our',
+        'their',
+        'his',
+        'her',
+        'its',
+        'not',
+        'do',
+        'does',
+        'did',
+        'will',
+        'would',
+        'can',
+        'could',
+        'should',
+        'about',
+      ]);
 
-    const wordFreq = new Map<string, number>();
-    for (const sentence of sentences) {
-      const words = sentence.toLowerCase().match(/[a-z0-9']+/g) ?? [];
-      for (const word of words) {
-        if (stopwords.has(word)) continue;
-        wordFreq.set(word, (wordFreq.get(word) ?? 0) + 1);
-      }
-    }
-
-    const scored = sentences.map((sentence) => {
-      const words = sentence.toLowerCase().match(/[a-z0-9']+/g) ?? [];
-      let score = 0;
-      for (const word of words) {
-        if (!stopwords.has(word)) {
-          score += wordFreq.get(word) ?? 0;
+      const wordFreq = new Map<string, number>();
+      for (const sentence of sentences) {
+        const words = sentence.toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? [];
+        for (const word of words) {
+          if (stopwords.has(word)) continue;
+          wordFreq.set(word, (wordFreq.get(word) ?? 0) + 1);
         }
       }
-      return { sentence, score };
-    });
 
-    scored.sort((a, b) => b.score - a.score);
-    const top = scored.slice(0, 3).map((s) => s.sentence);
-    return top.join(' ');
+      const scored = sentences.map((sentence, idx) => {
+        const words = sentence.toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? [];
+        let score = 0;
+        for (const word of words) {
+          if (!stopwords.has(word)) {
+            score += wordFreq.get(word) ?? 0;
+          }
+        }
+        return { idx, sentence, score };
+      });
+
+      scored.sort((a, b) => b.score - a.score);
+      const picked = scored.slice(0, max).sort((a, b) => a.idx - b.idx);
+      return picked.map((p) => ({ idx: p.idx, sentence: p.sentence }));
+    };
+
+    const tldr = pickTopSentences(3).map((s) => s.sentence);
+
+    const actionItems = sentences
+      .filter((s) => /\b(todo|action item|we need to|we should|let's|lets|i will|i'll|we will|we'll)\b/i.test(s))
+      .slice(0, 5);
+
+    const decisions = sentences
+      .filter((s) => /\b(decide(d)?|decision|agreed|approved|we'll|we will|going to)\b/i.test(s))
+      .slice(0, 5);
+
+    const keyPoints = pickTopSentences(5)
+      .map((s) => s.sentence)
+      .filter((s) => !tldr.includes(s))
+      .slice(0, 5);
+
+    const lines: string[] = [];
+    lines.push('## TL;DR');
+    for (const s of tldr) lines.push(`- ${s}`);
+
+    if (keyPoints.length > 0) {
+      lines.push('\n## Key Points');
+      for (const s of keyPoints) lines.push(`- ${s}`);
+    }
+
+    if (decisions.length > 0) {
+      lines.push('\n## Decisions');
+      for (const s of decisions) lines.push(`- ${s}`);
+    }
+
+    if (actionItems.length > 0) {
+      lines.push('\n## Action Items');
+      for (const s of actionItems) lines.push(`- ${s}`);
+    }
+
+    return lines.join('\n') + '\n';
   }
 
   private buildTranscriptText(captions: string[]): string {
@@ -99,7 +197,14 @@ export class TranscriptsService {
         body: JSON.stringify({
           model,
           prompt:
-            'Summarize the following transcript in 3-5 concise sentences. Focus on main points and decisions.\n\n' +
+            'You are a meeting notes assistant.\n' +
+            'Return Markdown with these sections:\n' +
+            '## TL;DR (3-5 bullets)\n' +
+            '## Key Points (bullets)\n' +
+            '## Decisions (bullets, if any)\n' +
+            '## Action Items (bullets with owner if mentioned)\n' +
+            'Keep it concise. Do not invent facts.\n\n' +
+            'Transcript:\n' +
             text,
           stream: false,
         }),

@@ -1,5 +1,13 @@
-import { WebSocketGateway, WebSocketServer, SubscribeMessage, MessageBody, OnGatewayConnection, OnGatewayDisconnect } from '@nestjs/websockets';
-import { Server } from 'socket.io';
+import {
+  ConnectedSocket,
+  MessageBody,
+  OnGatewayConnection,
+  OnGatewayDisconnect,
+  SubscribeMessage,
+  WebSocketGateway,
+  WebSocketServer,
+} from '@nestjs/websockets';
+import { Server, Socket } from 'socket.io';
 import { TranscriptsService } from '../transcripts/transcripts.service';
 
 @WebSocketGateway({
@@ -22,19 +30,41 @@ export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect 
     console.log('Client disconnected:', client.id);
   }
   @SubscribeMessage('stream-caption')
-  handleCaption(@MessageBody() data: { meetingId: string; text: string; source?: string; title?: string }) {
+  handleCaption(
+    @MessageBody() data: { meetingId: string; text: string; source?: string; title?: string },
+    @ConnectedSocket() client: Socket,
+  ) {
     console.log(`Live from ${data.meetingId}: ${data.text}`);
 
     this.transcriptsService.addCaption(data.meetingId, data.text);
+    const stats = this.transcriptsService.getStats(data.meetingId);
+    client.emit('caption-stored', stats);
 
     this.server.emit('live-transcript-update', data);
   }
 
+  @SubscribeMessage('get-session-stats')
+  handleGetSessionStats(@MessageBody() data: { meetingId: string }) {
+    return this.transcriptsService.getStats(data.meetingId);
+  }
+
   @SubscribeMessage('request-summary')
-  async handleRequestSummary(@MessageBody() data: { meetingId: string }) {
-    const summary = await this.transcriptsService.summarize(data.meetingId);
-    this.server.emit('meeting-summary', { meetingId: data.meetingId, summary });
-    return { meetingId: data.meetingId, summary };
+  async handleRequestSummary(
+    @MessageBody() data: { meetingId: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    try {
+      console.log(`Summary requested: meetingId=${data?.meetingId} client=${client?.id}`);
+      const summary = await this.transcriptsService.summarize(data.meetingId);
+      const stats = this.transcriptsService.getStats(data.meetingId);
+      client.emit('meeting-summary', { ...stats, summary });
+      return { ...stats, summary };
+    } catch (err: any) {
+      const message = err?.message ? String(err.message) : 'Failed to summarize.';
+      const stats = this.transcriptsService.getStats(data.meetingId);
+      client.emit('meeting-summary', { ...stats, summary: message });
+      return { ...stats, summary: message };
+    }
   }
 
   @SubscribeMessage('clear-session')
