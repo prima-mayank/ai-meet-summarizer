@@ -1,26 +1,28 @@
-import { Module } from '@nestjs/common';
-import { ConfigModule, ConfigService } from '@nestjs/config';
+import { DynamicModule, Module, Type } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { MeetingsModule } from './meetings/meetings.module';
 import { MeetingGateway } from './websocket/meeting.gateway';
+import * as dotenv from 'dotenv';
+
+dotenv.config();
+const mongoUri = process.env.MONGO_URI;
+const appImports: Array<DynamicModule | Type<any> | Promise<DynamicModule>> = [
+  ConfigModule.forRoot({
+    isGlobal: true,
+  }),
+];
+
+if (mongoUri) {
+  appImports.push(MongooseModule.forRoot(mongoUri));
+  appImports.push(MeetingsModule);
+} else {
+  console.warn('MONGO_URI not set. MeetingsModule is disabled.');
+}
 @Module({
-  imports: [
-    ConfigModule.forRoot({
-      isGlobal: true, 
-    }),
-
-    MongooseModule.forRootAsync({
-      imports: [ConfigModule],
-      useFactory: async (configService: ConfigService) => ({
-        uri: configService.get<string>('MONGO_URI'),
-      }),
-      inject: [ConfigService],
-    }),
-
-    MeetingsModule,
-  ],
+  imports: appImports,
   controllers: [AppController],
   providers: [AppService,MeetingGateway],
 })
