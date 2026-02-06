@@ -16,22 +16,24 @@ import { TranscriptsService } from '../transcripts/transcripts.service';
   },
   transports: ['websocket', 'polling'],
 })
-export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect {
-
+export class MeetingGateway
+  implements OnGatewayConnection, OnGatewayDisconnect
+{
   @WebSocketServer()
   server: Server;
   constructor(private transcriptsService: TranscriptsService) {}
 
-  handleConnection(client: any) {
+  handleConnection(client: Socket) {
     console.log('Client connected:', client.id);
   }
 
-  handleDisconnect(client: any) {
+  handleDisconnect(client: Socket) {
     console.log('Client disconnected:', client.id);
   }
   @SubscribeMessage('stream-caption')
   handleCaption(
-    @MessageBody() data: { meetingId: string; text: string; source?: string; title?: string },
+    @MessageBody()
+    data: { meetingId: string; text: string; source?: string; title?: string },
     @ConnectedSocket() client: Socket,
   ) {
     console.log(`Live from ${data.meetingId}: ${data.text}`);
@@ -54,13 +56,16 @@ export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect 
     @ConnectedSocket() client: Socket,
   ) {
     try {
-      console.log(`Summary requested: meetingId=${data?.meetingId} client=${client?.id}`);
+      console.log(
+        `Summary requested: meetingId=${data?.meetingId} client=${client?.id}`,
+      );
       const summary = await this.transcriptsService.summarize(data.meetingId);
       const stats = this.transcriptsService.getStats(data.meetingId);
       client.emit('meeting-summary', { ...stats, summary });
       return { ...stats, summary };
-    } catch (err: any) {
-      const message = err?.message ? String(err.message) : 'Failed to summarize.';
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : 'Failed to summarize.';
       const stats = this.transcriptsService.getStats(data.meetingId);
       client.emit('meeting-summary', { ...stats, summary: message });
       return { ...stats, summary: message };
