@@ -1,1 +1,1 @@
-const BACKEND_URL = "http://localhost:3001";
+globalThis.BACKEND_URL = "http://localhost:3001";

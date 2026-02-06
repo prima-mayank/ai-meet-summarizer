@@ -21,7 +21,7 @@ export class ExportController {
     if (safeFormat === 'md') {
       const body = `# ${title}\n\n## Summary\n\n${summary}\n\n## Transcript\n\n${transcript}\n`;
       res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
-      res.setHeader('Content-Disposition', 'attachment; filename=\"summary.md\"');
+      res.setHeader('Content-Disposition', 'attachment; filename="summary.md"');
       return res.send(body);
     }
 
@@ -29,20 +29,26 @@ export class ExportController {
       const body = `${title}\n\nSummary:\n${summary}\n\nTranscript:\n${transcript}\n`;
       const pdf = buildSimplePdf(body);
       res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', 'attachment; filename=\"summary.pdf\"');
+      res.setHeader(
+        'Content-Disposition',
+        'attachment; filename="summary.pdf"',
+      );
       return res.send(pdf);
     }
 
     if (safeFormat === 'notion') {
       const blocks = buildNotionBlocks(title, summary, transcript);
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      res.setHeader('Content-Disposition', 'attachment; filename=\"notion.json\"');
+      res.setHeader(
+        'Content-Disposition',
+        'attachment; filename="notion.json"',
+      );
       return res.send(JSON.stringify({ title, blocks }, null, 2));
     }
 
     const text = `${title}\n\nSummary:\n${summary}\n\nTranscript:\n${transcript}\n`;
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.setHeader('Content-Disposition', 'attachment; filename=\"summary.txt\"');
+    res.setHeader('Content-Disposition', 'attachment; filename="summary.txt"');
     return res.send(text);
   }
 }
@@ -92,9 +98,15 @@ function buildSimplePdf(text: string) {
   const objects: string[] = [];
   objects.push('1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj');
   objects.push('2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj');
-  objects.push('3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj');
-  objects.push(`4 0 obj << /Length ${content.length} >> stream\n${content}\nendstream endobj`);
-  objects.push('5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj');
+  objects.push(
+    '3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj',
+  );
+  objects.push(
+    `4 0 obj << /Length ${content.length} >> stream\n${content}\nendstream endobj`,
+  );
+  objects.push(
+    '5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj',
+  );
 
   let xref = 'xref\n0 6\n0000000000 65535 f \n';
   let offset = 0;
@@ -111,5 +123,8 @@ function buildSimplePdf(text: string) {
 }
 
 function escapePdfText(text: string) {
-  return text.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+  return text
+    .replace(/\\/g, '\\\\')
+    .replace(/\(/g, '\\(')
+    .replace(/\)/g, '\\)');
 }
